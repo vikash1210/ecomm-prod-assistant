@@ -73,3 +73,23 @@ def test_search_products_by_query_and_category() -> None:
 
     assert len(results) == 1
     assert results[0].id == "P002"
+
+def test_load_catalog_from_csv(tmp_path) -> None:
+    csv_file = tmp_path / "products.csv"
+    csv_file.write_text(
+        "product_title,price,rating,product_url,source\n"
+        "Test Phone,500,4.5,https://dummyjson.com/products/1,dummyjson\n"
+        "Test Laptop,1200,4.2,https://www.flipkart.com/test-product,flipkart\n",
+        encoding="utf-8",
+    )
+
+    catalog = ProductCatalog.from_csv(csv_file)
+    products = catalog.list_products()
+
+    assert len(products) == 2
+    assert products[0].name == "Test Phone"
+    assert products[0].price == 500.0
+    assert products[0].currency == "USD"
+    assert products[1].name == "Test Laptop"
+    assert products[1].price == 1200.0
+    assert products[1].currency == "INR"
