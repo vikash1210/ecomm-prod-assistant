@@ -1,4 +1,6 @@
 
+"""Ingest products from the local CSV catalog into AstraDB."""
+
 import os
 from pathlib import Path
 from typing import ClassVar
@@ -12,65 +14,115 @@ from prod_assistant.utils.model_loader import ModelLoader
 
 
 class DataIngestion:
-    """Load product reviews from CSV and ingest them into AstraDB."""
+    """Load local product data and ingest it into AstraDB."""
 
-    REQUIRED_COLUMNS: ClassVar[set[str]] =  {
-        "product_id",
+    REQUIRED_COLUMNS: ClassVar[set[str]] = {
         "product_title",
-        "rating",
-        "total_reviews",
         "price",
-        "top_reviews",
+        "product_url",
     }
 
     def __init__(self) -> None:
         self.config = load_config()
         self.model_loader = ModelLoader()
 
-    def load_data(self, csv_path: str | Path | None = None) -> pd.DataFrame:
+    def load_data(
+        self,
+        csv_path: str | Path | None = None,
+    ) -> pd.DataFrame:
+        """Load and validate the existing product CSV."""
         if csv_path is None:
             csv_path = (
                 Path(__file__).resolve().parents[2]
                 / "data"
-                / "product_reviews.csv"
+                / "flipkart_products.csv"
             )
 
-        csv_path = Path(csv_path)
+        path = Path(csv_path)
 
-        if not csv_path.is_file():
-            raise FileNotFoundError(f"Product data CSV not found: {csv_path}")
+        if not path.is_file():
+            raise FileNotFoundError(f"Product CSV not found: {path}")
 
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(path)
         missing_columns = self.REQUIRED_COLUMNS - set(df.columns)
 
         if missing_columns:
             raise ValueError(
-                f"Product data CSV is missing columns: {sorted(missing_columns)}"
+                "Product CSV is missing columns: "
+                f"{sorted(missing_columns)}"
             )
 
         return df
 
     def create_documents(self, df: pd.DataFrame) -> list[Document]:
-        documents = []
+        """Convert product rows into documents with searchable metadata."""
+        documents: list[Document] = []
 
         for _, row in df.iterrows():
-            review_text = str(row["top_reviews"])
+            title = str(row["product_title"]).strip()
+            product_url = str(row["product_url"]).strip()
+            price = pd.to_numeric(row["price"], errors="coerce")
+
+            if (
+                not title
+                or title.casefold() == "nan"
+                or not product_url
+                or product_url.casefold() == "nan"
+                or pd.isna(price)
+                or price <= 0
+            ):
+                continue
+
+            rating_value = pd.to_numeric(
+                row.get("rating"),
+                errors="coerce",
+            )
+            rating = (
+                float(rating_value)
+                if pd.notna(rating_value)
+                and 0 <= rating_value <= 5
+                else None
+            )
+
+            source_value = row.get("source")
+            source = (
+                str(source_value).strip()
+                if pd.notna(source_value) and str(source_value).strip()
+                else "unknown"
+            )
+
+            currency = "USD" if source == "dummyjson" else "INR"
+
+            content = "\n".join(
+                [
+                    f"Product: {title}",
+                    f"Price: {currency} {float(price):.2f}",
+                    f"Rating: {rating if rating is not None else 'Not rated'}",
+                    f"Source: {source}",
+                    f"Product URL: {product_url}",
+                ]
+            )
 
             metadata = {
-                "product_id": str(row["product_id"]),
-                "product_title": str(row["product_title"]),
-                "rating": str(row["rating"]),
-                "total_reviews": str(row["total_reviews"]),
-                "price": str(row["price"]),
+                "product_title": title,
+                "price": float(price),
+                "currency": currency,
+                "rating": rating if rating is not None else -1.0,
+                "source": source,
+                "product_url": product_url,
             }
 
             documents.append(
-                Document(page_content=review_text, metadata=metadata)
+                Document(page_content=content, metadata=metadata)
             )
 
         return documents
 
-    def ingest_data(self, csv_path: str | Path | None = None):
+    def ingest_data(
+        self,
+        csv_path: str | Path | None = None,
+    ) -> int:
+        """Embed product documents and add them to AstraDB."""
         endpoint = os.getenv("ASTRA_DB_API_ENDPOINT")
         token = os.getenv("ASTRA_DB_APPLICATION_TOKEN")
         keyspace = os.getenv("ASTRA_DB_KEYSPACE")
@@ -83,6 +135,10 @@ class DataIngestion:
 
         df = self.load_data(csv_path)
         documents = self.create_documents(df)
+
+        if not documents:
+            raise ValueError("No valid products found in the CSV.")
+
         embeddings = self.model_loader.load_embeddings()
 
         vector_store = AstraDBVectorStore(
