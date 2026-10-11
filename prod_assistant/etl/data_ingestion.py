@@ -1,5 +1,5 @@
 
-"""Ingest products from the local CSV catalog into AstraDB."""
+"""Ingest normalized product records from CSV into AstraDB."""
 
 import os
 from pathlib import Path
@@ -9,17 +9,35 @@ import pandas as pd
 from langchain_astradb import AstraDBVectorStore
 from langchain_core.documents import Document
 
+from prod_assistant.retriever.product_schema import (
+    normalize_dataframe,
+    row_to_product_fields,
+)
 from prod_assistant.utils.config_loader import load_config
 from prod_assistant.utils.model_loader import ModelLoader
 
 
 class DataIngestion:
-    """Load local product data and ingest it into AstraDB."""
+    """Load product records and ingest them into AstraDB."""
 
-    REQUIRED_COLUMNS: ClassVar[set[str]] = {
-        "product_title",
-        "price",
-        "product_url",
+    REQUIRED_COLUMN_ALIASES: ClassVar[dict[str, tuple[str, ...]]] = {
+        "product_title": (
+            "product_title",
+            "title",
+            "product_name",
+            "name",
+            "item_name",
+            "product",
+        ),
+        "price": (
+            "price",
+            "cost",
+            "sale_price",
+            "selling_price",
+            "current_price",
+            "amount",
+            "product_price",
+        ),
     }
 
     def __init__(self) -> None:
@@ -30,7 +48,7 @@ class DataIngestion:
         self,
         csv_path: str | Path | None = None,
     ) -> pd.DataFrame:
-        """Load and validate the existing product CSV."""
+        """Load and normalize the product CSV."""
         if csv_path is None:
             csv_path = (
                 Path(__file__).resolve().parents[2]
@@ -39,81 +57,102 @@ class DataIngestion:
             )
 
         path = Path(csv_path)
-
         if not path.is_file():
             raise FileNotFoundError(f"Product CSV not found: {path}")
 
-        df = pd.read_csv(path)
-        missing_columns = self.REQUIRED_COLUMNS - set(df.columns)
+        df = normalize_dataframe(pd.read_csv(path))
 
-        if missing_columns:
+        missing = {
+            field
+            for field in self.REQUIRED_COLUMN_ALIASES
+            if field not in df.columns
+        }
+        if missing:
             raise ValueError(
                 "Product CSV is missing columns: "
-                f"{sorted(missing_columns)}"
+                f"{sorted(missing)}. Supported title aliases include "
+                "title, product_name and name; supported price aliases "
+                "include cost and sale_price."
             )
 
         return df
 
     def create_documents(self, df: pd.DataFrame) -> list[Document]:
-        """Convert product rows into documents with searchable metadata."""
+        """Convert valid product rows into searchable documents."""
+        normalized_df = normalize_dataframe(df)
         documents: list[Document] = []
 
-        for _, row in df.iterrows():
-            title = str(row["product_title"]).strip()
-            product_url = str(row["product_url"]).strip()
-            price = pd.to_numeric(row["price"], errors="coerce")
+        for _, row in normalized_df.iterrows():
+            fields = row_to_product_fields(row.to_dict())
+            title = fields["product_title"]
+            price = fields["price"]
+            url = fields["product_url"]
 
-            if (
-                not title
-                or title.casefold() == "nan"
-                or not product_url
-                or product_url.casefold() == "nan"
-                or pd.isna(price)
-                or price <= 0
-            ):
+            # Preserve existing behavior: title, positive price and URL
+            # are required before a product becomes a searchable document.
+            if not title or price is None or not url:
                 continue
 
-            rating_value = pd.to_numeric(
-                row.get("rating"),
-                errors="coerce",
-            )
-            rating = (
-                float(rating_value)
-                if pd.notna(rating_value)
-                and 0 <= rating_value <= 5
-                else None
-            )
+            extra_attributes = fields["extra_attributes"]
 
-            source_value = row.get("source")
-            source = (
-                str(source_value).strip()
-                if pd.notna(source_value) and str(source_value).strip()
-                else "unknown"
-            )
+            content_fields = {
+                "Product": title,
+                "Brand": fields["brand"] or "",
+                "Category": fields["category"],
+                "Description": fields["description"],
+                "Price": f"{fields['currency']} {price:.2f}",
+                "Rating": (
+                    str(fields["rating"])
+                    if fields["rating"] is not None
+                    else "Not rated"
+                ),
+                "Availability": (
+                    "In stock" if fields["in_stock"] else "Out of stock"
+                ),
+                "Source": fields["source"],
+                "Product URL": url,
+            }
 
-            currency = "USD" if source == "dummyjson" else "INR"
-
-            content = "\n".join(
-                [
-                    f"Product: {title}",
-                    f"Price: {currency} {float(price):.2f}",
-                    f"Rating: {rating if rating is not None else 'Not rated'}",
-                    f"Source: {source}",
-                    f"Product URL: {product_url}",
-                ]
+            content_lines = [
+                f"{key}: {value}"
+                for key, value in content_fields.items()
+                if value
+            ]
+            content_lines.extend(
+                f"{key.replace('_', ' ').title()}: {value}"
+                for key, value in extra_attributes.items()
+                if value
             )
 
             metadata = {
                 "product_title": title,
                 "price": float(price),
-                "currency": currency,
-                "rating": rating if rating is not None else -1.0,
-                "source": source,
-                "product_url": product_url,
+                "currency": fields["currency"],
+                "rating": (
+                    float(fields["rating"])
+                    if fields["rating"] is not None
+                    else -1.0
+                ),
+                "source": fields["source"],
+                "product_url": url,
+                "brand": fields["brand"] or "",
+                "category": fields["category"],
+                "description": fields["description"],
+                "in_stock": fields["in_stock"],
             }
+            metadata.update(
+                {
+                    f"extra_{key}": value
+                    for key, value in extra_attributes.items()
+                    if value
+                }
+            )
 
             documents.append(
-                Document(page_content=content, metadata=metadata)
+                Document(
+                    page_content="\n".join(content_lines),
+                    metadata=metadata,
+                )
             )
 
         return documents
@@ -140,7 +179,6 @@ class DataIngestion:
             raise ValueError("No valid products found in the CSV.")
 
         embeddings = self.model_loader.load_embeddings()
-
         vector_store = AstraDBVectorStore(
             collection_name=self.config["astra_db"]["collection_name"],
             embedding=embeddings,

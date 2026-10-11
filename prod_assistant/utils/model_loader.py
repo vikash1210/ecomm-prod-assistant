@@ -37,7 +37,14 @@ class ModelLoader:
         llm_config = self.config["llm"]
 
         if provider is None:
-            provider = "google"
+         provider = next(
+        (
+            name
+            for name, config in llm_config.items()
+            if config.get("provider", name) == name
+        ),
+        "google",
+    )
 
         provider = provider.lower()
 

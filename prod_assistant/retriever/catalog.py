@@ -2,106 +2,85 @@
 """In-memory product catalog and search operations."""
 
 import hashlib
+import re
 from pathlib import Path
 
 import pandas as pd
 
 from prod_assistant.retriever.product import Product
+from prod_assistant.retriever.product_schema import (
+    normalize_dataframe,
+    row_to_product_fields,
+)
 
 
 class ProductCatalog:
     """Store products and provide basic search functionality."""
 
-    def __init__(self, products: list[Product] | None = None) -> None:
+    def __init__(
+        self,
+        products: list[Product] | None = None,
+    ) -> None:
         self._products = products or []
+        self._extra_attributes: dict[str, dict[str, str]] = {}
 
     @classmethod
     def from_csv(
         cls,
         csv_path: str | Path = "data/flipkart_products.csv",
     ) -> "ProductCatalog":
-        """Load products from a CSV file into an in-memory catalog."""
+        """Load products from CSV using the shared schema normalizer."""
         path = Path(csv_path)
-
         if not path.is_file():
             raise FileNotFoundError(f"Product CSV not found: {path}")
 
-        df = pd.read_csv(path)
+        df = normalize_dataframe(pd.read_csv(path))
 
-        required_columns = {
-            "product_title",
-            "price",
-            "product_url",
-        }
-        missing_columns = required_columns - set(df.columns)
-
-        if missing_columns:
+        if "product_title" not in df.columns or "price" not in df.columns:
             raise ValueError(
-                f"Product CSV is missing columns: {sorted(missing_columns)}"
+                "Product CSV must include a product title and price. "
+                "Accepted title aliases include title, product_name and name; "
+                "accepted price aliases include cost and sale_price."
             )
 
-        products = []
+        products: list[Product] = []
+        extra_attributes: dict[str, dict[str, str]] = {}
 
         for _, row in df.iterrows():
-            title = row.get("product_title")
-            url = row.get("product_url")
-            price_value = pd.to_numeric(row.get("price"), errors="coerce")
+            fields = row_to_product_fields(row.to_dict())
+            title = fields["product_title"]
+            price = fields["price"]
 
-            if pd.isna(title) or not str(title).strip():
+            if not title or price is None:
                 continue
 
-            if pd.isna(url) or not str(url).strip():
-                continue
+            product_url = fields["product_url"]
+            identity = product_url or f"{title.casefold()}|{price}"
 
-            if pd.isna(price_value) or price_value <= 0:
-                continue
-
-            product_url = str(url).strip()
             product_id = hashlib.sha256(
-                product_url.encode("utf-8")
+                identity.encode("utf-8")
             ).hexdigest()[:16]
 
-            rating_value = pd.to_numeric(
-                row.get("rating"),
-                errors="coerce",
-            )
-            rating = (
-                float(rating_value)
-                if pd.notna(rating_value) and 0 <= rating_value <= 5
-                else None
-            )
-
-            source_value = row.get("source")
-            if pd.notna(source_value) and str(source_value).strip():
-                source = str(source_value).strip()
-            elif "dummyjson.com" in product_url:
-                source = "dummyjson"
-            elif "flipkart.com" in product_url:
-                source = "flipkart"
-            else:
-                source = "unknown"
-
-            currency = (
-                "USD"
-                if source == "dummyjson"
-                else "INR"
+            product = Product(
+                id=product_id,
+                name=title,
+                brand=fields["brand"],
+                description=fields["description"],
+                category=fields["category"],
+                price=price,
+                currency=fields["currency"],
+                in_stock=fields["in_stock"],
+                rating=fields["rating"],
+                product_url=product_url,
+                source=fields["source"],
             )
 
-            products.append(
-                Product(
-                    id=product_id,
-                    name=str(title).strip(),
-                    description="",
-                    category="Uncategorized",
-                    price=float(price_value),
-                    currency=currency,
-                    rating=rating,
-                    product_url=product_url,
-                    source=source,
-                )
-            )
+            products.append(product)
+            extra_attributes[product_id] = fields["extra_attributes"]
 
-        return cls(products)
+        catalog = cls(products)
+        catalog._extra_attributes = extra_attributes
+        return catalog
 
     def list_products(self) -> list[Product]:
         """Return all products."""
@@ -109,37 +88,108 @@ class ProductCatalog:
 
     def get_product(self, product_id: str) -> Product | None:
         """Find a product by its ID."""
-        for product in self._products:
-            if product.id == product_id:
-                return product
-        return None
+        return next(
+            (
+                product
+                for product in self._products
+                if product.id == product_id
+            ),
+            None,
+        )
+
+    def get_extra_attributes(self, product_id: str) -> dict[str, str]:
+        """Return extra CSV attributes for a product."""
+        return dict(self._extra_attributes.get(product_id, {}))
 
     def search_products(
         self,
         query: str = "",
         category: str | None = None,
     ) -> list[Product]:
-        """Search product names and descriptions, optionally by category."""
-        normalized_query = query.strip().casefold()
+        """Search products using keyword ranking across standard and extra fields."""
+        normalized_query = query.casefold().strip()
         normalized_category = (
-            category.strip().casefold() if category else None
+            category.casefold().strip()
+            if category and category.strip()
+            else None
         )
 
-        results = []
+        stop_words = {
+            "a", "an", "and", "are", "best", "can", "do", "find",
+            "for", "give", "good", "i", "in", "is", "me", "of",
+            "on", "please", "recommend", "show", "suggest", "the",
+            "to", "want", "what", "which", "with",
+            "मुझे", "के", "का", "की", "है", "हैं", "और", "एक",
+            "बताओ", "दिखाओ",
+        }
+
+        def tokenize(text: str) -> list[str]:
+            return re.findall(
+                r"[^\W_]+",
+                text.casefold(),
+                flags=re.UNICODE,
+            )
+
+        query_words = {
+            word
+            for word in tokenize(normalized_query)
+            if word not in stop_words
+        }
+
+        ranked: list[tuple[int, int, Product]] = []
 
         for product in self._products:
-            matches_query = (
-                not normalized_query
-                or normalized_query in product.name.casefold()
-                or normalized_query in product.description.casefold()
+            if (
+                normalized_category
+                and product.category.casefold() != normalized_category
+            ):
+                continue
+
+            if not normalized_query:
+                ranked.append((0, 0, product))
+                continue
+
+            if not query_words:
+                continue
+
+            extra_text = " ".join(
+                self._extra_attributes.get(product.id, {}).values()
             )
 
-            matches_category = (
-                not normalized_category
-                or product.category.casefold() == normalized_category
+            name_words = set(tokenize(product.name))
+            brand_words = set(tokenize(product.brand or ""))
+            description_words = set(tokenize(product.description))
+            category_words = set(tokenize(product.category))
+            extra_words = set(tokenize(extra_text))
+
+            matched_name = query_words & name_words
+            matched_brand = query_words & brand_words
+            matched_description = query_words & description_words
+            matched_category = query_words & category_words
+            matched_extra = query_words & extra_words
+
+            score = (
+                3 * len(matched_name)
+                + 3 * len(matched_brand)
+                + 2 * len(matched_description)
+                + len(matched_category)
+                + len(matched_extra)
             )
 
-            if matches_query and matches_category:
-                results.append(product)
+            if normalized_query in product.name.casefold():
+                score += 2
 
-        return results
+            if score > 0:
+                ranked.append(
+                    (
+                        score,
+                        len(matched_name) + len(matched_brand),
+                        product,
+                    )
+                )
+
+        ranked.sort(
+            key=lambda item: (item[0], item[1]),
+            reverse=True,
+        )
+        return [product for _, _, product in ranked]

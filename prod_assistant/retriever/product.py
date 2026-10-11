@@ -9,8 +9,9 @@ class Product(BaseModel):
 
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
+    brand: str | None = None
     description: str = ""
-    category: str = Field(min_length=1)
+    category: str = "Uncategorized"
     price: float = Field(gt=0)
     currency: str = "INR"
     in_stock: bool = True

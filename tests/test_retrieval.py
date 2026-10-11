@@ -193,3 +193,31 @@ def test_load_retriever_reports_missing_configuration(
 
     with pytest.raises(RuntimeError, match="AstraDB retrieval requires"):
         retriever.load_retriever()
+
+def test_local_retrieval_preserves_extra_csv_attributes(tmp_path):
+    import pandas as pd
+
+    from prod_assistant.retriever.catalog import ProductCatalog
+    from prod_assistant.retriever.retrieval import Retriever
+
+    csv_path = tmp_path / "products.csv"
+    pd.DataFrame(
+        [
+            {
+                "Title": "Schema Test Phone",
+                "Cost": "₹12,999",
+                "URL": "https://example.com/schema-phone",
+                "Manufacturer": "Acme",
+                "Color": "Blue",
+            }
+        ]
+    ).to_csv(csv_path, index=False)
+
+    catalog = ProductCatalog.from_csv(csv_path)
+    retriever = Retriever(catalog=catalog)
+
+    documents = retriever.invoke("Blue")
+
+    assert len(documents) == 1
+    assert "Color: Blue" in documents[0].page_content
+    assert documents[0].metadata["extra_color"] == "Blue"
