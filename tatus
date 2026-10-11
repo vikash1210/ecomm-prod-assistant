@@ -1,0 +1,182 @@
+[1mdiff --git a/tests/test_retrieval.py b/tests/test_retrieval.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..0c6460d[m
+[1m--- /dev/null[m
+[1m+++ b/tests/test_retrieval.py[m
+[36m@@ -0,0 +1,195 @@[m
+[32m+[m
+[32m+[m[32m"""Unit tests for local and AstraDB-backed product retrieval."""[m
+[32m+[m[32mimport pytest[m
+[32m+[m[32mfrom langchain_core.documents import Document[m
+[32m+[m
+[32m+[m[32mfrom prod_assistant.retriever.catalog import ProductCatalog[m
+[32m+[m[32mfrom prod_assistant.retriever.product import Product[m
+[32m+[m[32mfrom prod_assistant.retriever.retrieval import Retriever[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef make_catalog() -> ProductCatalog:[m
+[32m+[m[32m    """Build a small in-memory catalog for testing."""[m
+[32m+[m[32m    return ProductCatalog([m
+[32m+[m[32m        [[m
+[32m+[m[32m            Product([m
+[32m+[m[32m                id="P001",[m
+[32m+[m[32m                name="Wireless Mouse",[m
+[32m+[m[32m                description="Ergonomic wireless mouse",[m
+[32m+[m[32m                category="Electronics",[m
+[32m+[m[32m                price=799.0,[m
+[32m+[m[32m                currency="INR",[m
+[32m+[m[32m                rating=4.5,[m
+[32m+[m[32m                product_url="https://example.com/mouse",[m
+[32m+[m[32m                source="test",[m
+[32m+[m[32m            ),[m
+[32m+[m[32m            Product([m
+[32m+[m[32m                id="P002",[m
+[32m+[m[32m                name="Mechanical Keyboard",[m
+[32m+[m[32m                description="RGB gaming keyboard",[m
+[32m+[m[32m                category="Electronics",[m
+[32m+[m[32m                price=2499.0,[m
+[32m+[m[32m                currency="INR",[m
+[32m+[m[32m                rating=4.2,[m
+[32m+[m[32m                product_url="https://example.com/keyboard",[m
+[32m+[m[32m                source="test",[m
+[32m+[m[32m            ),[m
+[32m+[m[32m            Product([m
+[32m+[m[32m                id="P003",[m
+[32m+[m[32m                name="Cotton T-Shirt",[m
+[32m+[m[32m                description="Comfortable cotton shirt",[m
+[32m+[m[32m                category="Clothing",[m
+[32m+[m[32m                price=499.0,[m
+[32m+[m[32m                currency="INR",[m
+[32m+[m[32m                rating=None,[m
+[32m+[m[32m                product_url="https://example.com/shirt",[m
+[32m+[m[32m                source="test",[m
+[32m+[m[32m            ),[m
+[32m+[m[32m        ][m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m
+[32m+[m[32m@pytest.fixture[m
+[32m+[m[32mdef clear_astra_environment(monkeypatch):[m
+[32m+[m[32m    """Ensure retrieval tests do not use real AstraDB credentials."""[m
+[32m+[m[32m    for name in Retriever.REQUIRED_ASTRA_VARS:[m
+[32m+[m[32m        monkeypatch.delenv(name, raising=False)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_invoke_uses_local_catalog_without_remote_configuration([m
+[32m+[m[32m    clear_astra_environment,[m
+[32m+[m[32m):[m
+[32m+[m[32m    retriever = Retriever(catalog=make_catalog())[m
+[32m+[m
+[32m+[m[32m    results = retriever.invoke("mouse")[m
+[32m+[m
+[32m+[m[32m    assert len(results) == 1[m
+[32m+[m[32m    assert isinstance(results[0], Document)[m
+[32m+[m[32m    assert "Wireless Mouse" in results[0].page_content[m
+[32m+[m[32m    assert results[0].metadata["product_title"] == "Wireless Mouse"[m
+[32m+[m[32m    assert results[0].metadata["price"] == 799.0[m
+[32m+[m[32m    assert results[0].metadata["currency"] == "INR"[m
+[32m+[m[32m    assert results[0].metadata["product_url"] == "https://example.com/mouse"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_invoke_respects_result_limit(clear_astra_environment):[m
+[32m+[m[32m    retriever = Retriever(catalog=make_catalog())[m
+[32m+[m
+[32m+[m[32m    results = retriever.invoke("", limit=2)[m
+[32m+[m
+[32m+[m[32m    assert len(results) == 2[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_invoke_rejects_zero_limit(clear_astra_environment):[m
+[32m+[m[32m    retriever = Retriever(catalog=make_catalog())[m
+[32m+[m
+[32m+[m[32m    with pytest.raises(ValueError, match="limit must be at least 1"):[m
+[32m+[m[32m        retriever.invoke("mouse", limit=0)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_invoke_rejects_negative_limit(clear_astra_environment):[m
+[32m+[m[32m    retriever = Retriever(catalog=make_catalog())[m
+[32m+[m
+[32m+[m[32m    with pytest.raises(ValueError, match="limit must be at least 1"):[m
+[32m+[m[32m        retriever.invoke("mouse", limit=-1)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_product_to_document_preserves_product_metadata():[m
+[32m+[m[32m    product = make_catalog().get_product("P003")[m
+[32m+[m[32m    assert product is not None[m
+[32m+[m
+[32m+[m[32m    document = Retriever._product_to_document(product)[m
+[32m+[m
+[32m+[m[32m    assert "Cotton T-Shirt" in document.page_content[m
+[32m+[m[32m    assert "Not rated" in document.page_content[m
+[32m+[m[32m    assert document.metadata["product_title"] == "Cotton T-Shirt"[m
+[32m+[m[32m    assert document.metadata["rating"] == -1.0[m
+[32m+[m[32m    assert document.metadata["product_url"] == "https://example.com/shirt"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_format_results_returns_local_results(clear_astra_environment):[m
+[32m+[m[32m    retriever = Retriever(catalog=make_catalog())[m
+[32m+[m
+[32m+[m[32m    result = retriever.format_results("keyboard")[m
+[32m+[m
+[32m+[m[32m    assert "Mechanical Keyboard" in result[m
+[32m+[m[32m    assert "2499.00" in result[m
+[32m+[m[32m    assert "https://example.com/keyboard" in result[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_format_results_handles_no_matches(clear_astra_environment):[m
+[32m+[m[32m    retriever = Retriever(catalog=make_catalog())[m
+[32m+[m
+[32m+[m[32m    result = retriever.format_results("product-that-does-not-exist")[m
+[32m+[m
+[32m+[m[32m    assert result == "No local results found."[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_invoke_uses_configured_remote_retriever([m
+[32m+[m[32m    monkeypatch,[m
+[32m+[m[32m    clear_astra_environment,[m
+[32m+[m[32m):[m
+[32m+[m[32m    """Verify remote retrieval is selected without making network calls."""[m
+[32m+[m[32m    for name in Retriever.REQUIRED_ASTRA_VARS:[m
+[32m+[m[32m        monkeypatch.setenv(name, "test-value")[m
+[32m+[m
+[32m+[m[32m    expected_documents = [[m
+[32m+[m[32m        Document([m
+[32m+[m[32m            page_content="Product: Remote Phone",[m
+[32m+[m[32m            metadata={"product_title": "Remote Phone"},[m
+[32m+[m[32m        )[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    class FakeRemoteRetriever:[m
+[32m+[m[32m        def invoke(self, query):[m
+[32m+[m[32m            assert query == "remote phone"[m
+[32m+[m[32m            return expected_documents[m
+[32m+[m
+[32m+[m[32m    retriever = Retriever(catalog=make_catalog())[m
+[32m+[m[32m    monkeypatch.setattr([m
+[32m+[m[32m        retriever,[m
+[32m+[m[32m        "load_retriever",[m
+[32m+[m[32m        lambda: FakeRemoteRetriever(),[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    results = retriever.invoke("remote phone", limit=1)[m
+[32m+[m
+[32m+[m[32m    assert results == expected_documents[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_remote_retrieval_respects_limit([m
+[32m+[m[32m    monkeypatch,[m
+[32m+[m[32m    clear_astra_environment,[m
+[32m+[m[32m):[m
+[32m+[m[32m    """Limit remote results without contacting AstraDB."""[m
+[32m+[m[32m    for name in Retriever.REQUIRED_ASTRA_VARS:[m
+[32m+[m[32m        monkeypatch.setenv(name, "test-value")[m
+[32m+[m
+[32m+[m[32m    documents = [[m
+[32m+[m[32m        Document(page_content=f"Product {index}", metadata={})[m
+[32m+[m[32m        for index in range(3)[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    class FakeRemoteRetriever:[m
+[32m+[m[32m        def invoke(self, query):[m
+[32m+[m[32m            return documents[m
+
