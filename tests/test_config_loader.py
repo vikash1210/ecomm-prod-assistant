@@ -17,6 +17,6 @@ def test_load_config_contains_original_model_settings():
     assert config["astra_db"]["collection_name"] == "ecommercedata"
     assert config["embedding_model"]["provider"] == "google"
     assert config["retriever"]["top_k"] == 4
-    assert config["llm"]["google"]["model_name"] == "gemini-2.0-flash"
+    assert config["llm"]["google"]["model_name"] == "gemini-3.5-flash-lite"
     assert config["llm"]["groq"]["model_name"] == "deepseek-r1-distill-llama-70b"
-    assert config["llm"]["openai"]["model_name"] == "gpt-4o"
+    assert config["llm"]["openai"]["model_name"] == "gpt-4.1-mini"

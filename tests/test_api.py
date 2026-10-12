@@ -21,7 +21,7 @@ def test_products_endpoint_returns_all_products() -> None:
     response = client.get("/products")
 
     assert response.status_code == 200
-    assert len(response.json()) == 6
+    assert len(response.json()) == 7
 
 
 def test_products_endpoint_searches_by_query() -> None:
@@ -30,5 +30,5 @@ def test_products_endpoint_searches_by_query() -> None:
 
     assert response.status_code == 200
     products = response.json()
-    assert len(products) == 2
+    assert len(products) == 3
     assert all("iphone" in product["name"].casefold() for product in products)
