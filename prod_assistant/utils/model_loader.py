@@ -25,17 +25,13 @@ class ModelLoader:
         provider = embedding_config["provider"].lower()
 
         if provider != "google":
-            raise ValueError(
-                f"Unsupported embedding provider: {provider}"
-            )
-
+            raise ValueError(f"Unsupported embedding provider: {provider}")
         if not os.getenv("GOOGLE_API_KEY"):
             raise ValueError("Missing required API key: GOOGLE_API_KEY")
-
+        
         return GoogleGenerativeAIEmbeddings(
-            model=embedding_config["model_name"]
-        )
-
+        model=embedding_config["model_name"],)
+    
     def _load_provider_llm(self, provider: str):
         """Create a chat model for the selected provider."""
         llm_config = self.config["llm"]
