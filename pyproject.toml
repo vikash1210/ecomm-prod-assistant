@@ -7,7 +7,7 @@ name = "ecomm-prod-assistant"
 version = "0.1.0"
 description = "An LLM-powered e-commerce product assistant using RAG and MCP."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "beautifulsoup4==4.13.5",
     "fastapi==0.116.1",
