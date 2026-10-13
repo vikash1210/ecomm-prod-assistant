@@ -14,7 +14,7 @@ def test_load_config_contains_expected_sections():
 def test_load_config_contains_original_model_settings():
     config = load_config()
 
-    assert config["astra_db"]["collection_name"] == "ecommercedata"
+    assert config["astra_db"]["collection_name"] == "ecommercedata_google"
     assert config["embedding_model"]["provider"] == "google"
     assert config["retriever"]["top_k"] == 4
     assert config["llm"]["google"]["model_name"] == "gemini-3.5-flash-lite"
