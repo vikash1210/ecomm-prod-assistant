@@ -1,0 +1,709 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShopSmart | AI Shopping Assistant</title>
+
+    <style>
+        :root {
+            --green: #153f35;
+            --lime: #d8f36a;
+            --cream: #f7f7f0;
+            --text: #1d2925;
+            --muted: #68736d;
+            --white: #ffffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: var(--cream);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        button, input {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 7%;
+            background: var(--white);
+            border-bottom: 1px solid #e8ebe5;
+        }
+
+        .logo {
+            font-size: 25px;
+            font-weight: 800;
+            color: var(--green);
+        }
+
+        .logo span {
+            color: #7a9e23;
+        }
+
+        .nav-label {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .hero {
+            padding: 85px 7%;
+            min-height: 410px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 40px;
+            background:
+                radial-gradient(circle at 85% 20%, #d8f36a 0, transparent 28%),
+                linear-gradient(120deg, #e9eee1, #f7f7f0);
+        }
+
+        .hero-content {
+            max-width: 650px;
+        }
+
+        .eyebrow {
+            color: #59751c;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            margin: 18px 0;
+            font-size: clamp(38px, 5vw, 62px);
+            line-height: 1.08;
+            letter-spacing: -2px;
+        }
+
+        h1 span {
+            color: #688a22;
+        }
+
+        .hero p {
+            max-width: 520px;
+            color: #59655e;
+            font-size: 17px;
+        }
+
+        .hero-button {
+            margin-top: 25px;
+            border: none;
+            border-radius: 30px;
+            padding: 13px 22px;
+            background: var(--green);
+            color: white;
+            font-weight: bold;
+        }
+
+        .hero-art {
+            width: 230px;
+            height: 230px;
+            flex-shrink: 0;
+            display: grid;
+            place-items: center;
+            border-radius: 40% 60% 55% 45%;
+            background: var(--green);
+            color: var(--lime);
+            font-size: 86px;
+            box-shadow: 0 25px 55px #153f3525;
+            transform: rotate(-5deg);
+        }
+
+        .section {
+            padding: 48px 7%;
+        }
+
+        .section-heading {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        h2 {
+            font-size: 28px;
+            line-height: 1.2;
+        }
+
+        .subheading {
+            color: var(--muted);
+            margin-top: 7px;
+            font-size: 14px;
+        }
+
+        .search-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .search-row input {
+            min-width: 0;
+            flex: 1;
+            padding: 14px 16px;
+            border: 1px solid #dce2d9;
+            border-radius: 12px;
+            background: white;
+            outline-color: #78952b;
+        }
+
+        .primary-button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 12px;
+            background: var(--green);
+            color: white;
+            font-weight: bold;
+        }
+
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .product-card {
+            padding: 22px;
+            background: white;
+            border: 1px solid #e6e9e1;
+            border-radius: 18px;
+            min-width: 0;
+            transition: transform .2s, box-shadow .2s;
+        }
+
+        .product-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px #153f3510;
+        }
+
+        .product-icon {
+            height: 75px;
+            display: grid;
+            place-items: center;
+            margin-bottom: 16px;
+            border-radius: 12px;
+            background: #f0f4e8;
+            font-size: 32px;
+        }
+
+        .product-card h3 {
+            font-size: 16px;
+            overflow-wrap: anywhere;
+            margin-bottom: 10px;
+        }
+
+        .product-price {
+            font-size: 21px;
+            font-weight: 800;
+            color: var(--green);
+        }
+
+        .product-meta {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .product-link {
+            display: inline-block;
+            margin-top: 15px;
+            color: #54731a;
+            font-size: 14px;
+            font-weight: bold;
+            text-decoration: none;
+        }
+
+        .status {
+            color: var(--muted);
+            font-size: 14px;
+            margin: 10px 0;
+        }
+
+        .footer {
+            padding: 25px 7%;
+            text-align: center;
+            color: var(--muted);
+            border-top: 1px solid #e4e8df;
+            font-size: 13px;
+        }
+
+        /* Floating chatbot button */
+        .chat-toggle {
+            position: fixed;
+            right: 25px;
+            bottom: 25px;
+            z-index: 1001;
+            width: 64px;
+            height: 64px;
+            border: none;
+            border-radius: 50%;
+            background: var(--green);
+            color: var(--lime);
+            font-size: 28px;
+            box-shadow: 0 8px 28px #153f3540;
+        }
+
+        .chat-window {
+            position: fixed;
+            right: 25px;
+            bottom: 102px;
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            width: min(390px, calc(100vw - 30px));
+            height: min(540px, calc(100vh - 130px));
+            overflow: hidden;
+            border: 1px solid #e2e7df;
+            border-radius: 20px;
+            background: white;
+            box-shadow: 0 18px 65px #102c2330;
+        }
+
+        .chat-window.open {
+            display: flex;
+        }
+
+        .chat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 17px;
+            background: var(--green);
+            color: white;
+        }
+
+        .chat-header strong {
+            display: block;
+        }
+
+        .chat-header small {
+            color: #d8e6dc;
+        }
+
+        .close-chat {
+            border: none;
+            background: transparent;
+            color: white;
+            font-size: 25px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: #fafbf8;
+        }
+
+        .message {
+            max-width: 88%;
+            margin-bottom: 12px;
+            padding: 11px 13px;
+            border-radius: 14px;
+            font-size: 14px;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        .message.bot {
+            margin-right: auto;
+            background: #eaf0e5;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.user {
+            margin-left: auto;
+            background: var(--green);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-form {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            border-top: 1px solid #e7ebe4;
+        }
+
+        .chat-form input {
+            width: 0;
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #dce2d9;
+            border-radius: 10px;
+            outline-color: #78952b;
+        }
+
+        .chat-form button {
+            padding: 0 15px;
+            border: none;
+            border-radius: 10px;
+            background: var(--green);
+            color: white;
+        }
+
+        @media (max-width: 720px) {
+            .hero {
+                padding-top: 55px;
+                padding-bottom: 55px;
+            }
+
+            .hero-art {
+                display: none;
+            }
+
+            .product-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .section-heading {
+                align-items: start;
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 450px) {
+            .product-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .search-row {
+                flex-direction: column;
+            }
+
+            .navbar {
+                padding-left: 5%;
+                padding-right: 5%;
+            }
+
+            .nav-label {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="navbar">
+        <div class="logo">Shop<span>Smart.</span></div>
+        <div class="nav-label">AI-powered product discovery</div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="hero-content">
+                <div class="eyebrow">Your personal shopping assistant</div>
+                <h1>Find better products.<br><span>Shop smarter.</span></h1>
+                <p>
+                    Explore products, check prices and ratings, and ask our
+                    AI shopping assistant for help finding the right product.
+                </p>
+                <button class="hero-button" id="openAssistant">
+                    Ask the AI assistant ↗
+                </button>
+            </div>
+
+            <div class="hero-art" aria-hidden="true">✳</div>
+        </section>
+
+        <section class="section" id="products">
+            <div class="section-heading">
+                <div>
+                    <h2>Discover products</h2>
+                    <p class="subheading">
+                        Search our product catalog.
+                    </p>
+                </div>
+            </div>
+
+            <form class="search-row" id="searchForm">
+                <input
+                    id="productQuery"
+                    type="search"
+                    placeholder="Try a product name or category..."
+                    aria-label="Search products"
+                >
+                <button class="primary-button" type="submit">Search</button>
+            </form>
+
+            <p class="status" id="productStatus" role="status">
+                Connecting to product catalog...
+            </p>
+
+            <div class="product-grid" id="productGrid"></div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        ShopSmart · Product information depends on the available catalog.
+    </footer>
+
+    <button
+        class="chat-toggle"
+        id="chatToggle"
+        aria-label="Open shopping assistant"
+        aria-expanded="false"
+    >✉</button>
+
+    <section class="chat-window" id="chatWindow" aria-label="Shopping assistant">
+        <header class="chat-header">
+            <div>
+                <strong>ShopSmart Assistant</strong>
+                <small>Ask about products, prices and ratings</small>
+            </div>
+            <button class="close-chat" id="closeChat" aria-label="Close chat">
+                &times;
+            </button>
+        </header>
+
+        <div class="chat-messages" id="chatMessages" aria-live="polite">
+            <div class="message bot">
+                Hi! 👋 Tell me what product you're looking for, or ask me
+                about prices, ratings and product details.
+            </div>
+        </div>
+
+        <form class="chat-form" id="chatForm">
+            <input
+                id="chatInput"
+                type="text"
+                placeholder="Ask a product question..."
+                autocomplete="off"
+                required
+            >
+            <button type="submit">Send</button>
+        </form>
+    </section>
+
+    <script>
+        // API calls will use the same website origin.
+        // We will connect this page to FastAPI in the next step.
+        const API_BASE = window.location.origin;
+
+        const productGrid = document.getElementById("productGrid");
+        const productStatus = document.getElementById("productStatus");
+        const productQuery = document.getElementById("productQuery");
+        const chatWindow = document.getElementById("chatWindow");
+        const chatToggle = document.getElementById("chatToggle");
+        const chatMessages = document.getElementById("chatMessages");
+        const chatInput = document.getElementById("chatInput");
+
+        function openChat() {
+            chatWindow.classList.add("open");
+            chatToggle.setAttribute("aria-expanded", "true");
+            chatInput.focus();
+        }
+
+        function closeChat() {
+            chatWindow.classList.remove("open");
+            chatToggle.setAttribute("aria-expanded", "false");
+        }
+
+        chatToggle.addEventListener("click", () => {
+            if (chatWindow.classList.contains("open")) {
+                closeChat();
+            } else {
+                openChat();
+            }
+        });
+
+        document.getElementById("openAssistant")
+            .addEventListener("click", openChat);
+
+        document.getElementById("closeChat")
+            .addEventListener("click", closeChat);
+
+        function addMessage(text, type) {
+            const message = document.createElement("div");
+            message.className = `message ${type}`;
+            message.textContent = text;
+            chatMessages.appendChild(message);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return message;
+        }
+
+        function formatPrice(product) {
+            const price = Number(product.price);
+
+            if (!Number.isFinite(price)) {
+                return product.price ?? "Price unavailable";
+            }
+
+            const currency = product.currency || "INR";
+
+            try {
+                return new Intl.NumberFormat("en-IN", {
+                    style: "currency",
+                    currency: currency,
+                    maximumFractionDigits: 2
+                }).format(price);
+            } catch {
+                return `${currency} ${price.toLocaleString("en-IN")}`;
+            }
+        }
+
+        function createProductCard(product) {
+            const card = document.createElement("article");
+            card.className = "product-card";
+
+            const icon = document.createElement("div");
+            icon.className = "product-icon";
+            icon.textContent = "🛍️";
+
+            const title = document.createElement("h3");
+            title.textContent = product.name || "Unnamed product";
+
+            const price = document.createElement("div");
+            price.className = "product-price";
+            price.textContent = formatPrice(product);
+
+            const meta = document.createElement("div");
+            meta.className = "product-meta";
+
+            const rating = product.rating;
+            const category = product.category || "Product";
+
+            meta.textContent =
+                `${category} · Rating: ${
+                    rating === null || rating === undefined || rating === ""
+                        ? "Not available"
+                        : rating
+                }`;
+
+            card.append(icon, title, price, meta);
+
+            if (product.product_url) {
+                try {
+                    const url = new URL(product.product_url);
+
+                    if (url.protocol === "https:" || url.protocol === "http:") {
+                        const link = document.createElement("a");
+                        link.className = "product-link";
+                        link.href = url.href;
+                        link.target = "_blank";
+                        link.rel = "noopener noreferrer";
+                        link.textContent = "View product ↗";
+                        card.appendChild(link);
+                    }
+                } catch {
+                    // Ignore invalid product URLs.
+                }
+            }
+
+            return card;
+        }
+
+        async function loadProducts(query = "") {
+            productStatus.textContent = "Loading products...";
+            productGrid.replaceChildren();
+
+            try {
+                const url = new URL("/products", API_BASE);
+
+                if (query.trim()) {
+                    url.searchParams.set("q", query.trim());
+                }
+
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`Product API returned ${response.status}`);
+                }
+
+                const products = await response.json();
+
+                if (!Array.isArray(products) || products.length === 0) {
+                    productStatus.textContent = "No matching products found.";
+                    return;
+                }
+
+                products.forEach(product => {
+                    productGrid.appendChild(createProductCard(product));
+                });
+
+                productStatus.textContent =
+                    `${products.length} product(s) found.`;
+
+            } catch (error) {
+                productStatus.textContent =
+                    "Could not load products. Check the API connection.";
+                console.error("Product search failed:", error);
+            }
+        }
+
+        document.getElementById("searchForm")
+            .addEventListener("submit", event => {
+                event.preventDefault();
+                loadProducts(productQuery.value);
+            });
+
+        document.getElementById("chatForm")
+            .addEventListener("submit", async event => {
+                event.preventDefault();
+
+                const query = chatInput.value.trim();
+
+                if (!query) return;
+
+                addMessage(query, "user");
+                chatInput.value = "";
+                chatInput.disabled = true;
+
+                const pending = addMessage("Searching for an answer...", "bot");
+
+                try {
+                    const response = await fetch(
+                        new URL("/chat", API_BASE),
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({ query })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            data.detail || `Chat API returned ${response.status}`
+                        );
+                    }
+
+                    pending.textContent =
+                        data.answer || "No answer was returned.";
+
+                } catch (error) {
+                    pending.textContent =
+                        "Sorry, I could not reach the assistant. Please check the API connection.";
+                    console.error("Chat request failed:", error);
+
+                } finally {
+                    chatInput.disabled = false;
+                    chatInput.focus();
+                }
+            });
+
+        // Load the catalog when the page opens.
+        loadProducts();
+    </script>
+</body>
+</html>
