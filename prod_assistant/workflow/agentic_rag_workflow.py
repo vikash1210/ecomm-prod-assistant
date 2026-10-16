@@ -1,4 +1,3 @@
-
 """Agentic RAG workflow using LangChain and LangGraph-compatible APIs."""
 
 import logging
@@ -10,8 +9,10 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, START, StateGraph
 
+from prod_assistant.mcp_servers.client import MCPProductSearchClient
 from prod_assistant.retriever.retrieval import Retriever
 from prod_assistant.utils.model_loader import ModelLoader
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,6 +41,7 @@ class AgenticRAG:
     )
 
     NO_CONTEXT = "No relevant product documents found."
+    NO_LOCAL_RESULTS = "No local results found."
 
     def __init__(
         self,
@@ -47,16 +49,21 @@ class AgenticRAG:
         llm=None,
         max_retries: int = 1,
     ) -> None:
-        """Initialize the retriever, LLM, and retry limit."""
+        """Initialize the retriever, MCP client, LLM, and retry limit."""
         if max_retries < 0:
             raise ValueError("max_retries cannot be negative")
 
+        # An injected retriever is retained for tests and custom integrations.
+        # Normal application execution uses the MCP product-search tool.
         self.retriever = retriever if retriever is not None else Retriever()
+        self.mcp_client = (
+            MCPProductSearchClient() if retriever is None else None
+        )
         self.llm = llm if llm is not None else ModelLoader().load_llm()
         self.max_retries = max_retries
         self.app = self._build_workflow().compile()
 
-        logger.info("Fast Agentic RAG workflow initialized")
+        logger.info("Agentic RAG workflow initialized")
 
     @staticmethod
     def _is_greeting(query: str) -> bool:
@@ -114,10 +121,26 @@ class AgenticRAG:
 
     @staticmethod
     def _has_context(context: str) -> bool:
-        """Check whether retrieval returned source material."""
-        return bool(context.strip()) and (
-            context.strip() != AgenticRAG.NO_CONTEXT
-        )
+        """Check whether retrieval returned actual source material."""
+        normalized = context.strip().casefold()
+        return bool(normalized) and normalized not in {
+            AgenticRAG.NO_CONTEXT.casefold(),
+            AgenticRAG.NO_LOCAL_RESULTS.casefold(),
+        }
+
+    def _retrieve_context(self, query: str) -> str:
+        """Retrieve product context through MCP or an injected retriever."""
+        if self.mcp_client is not None:
+            result = self.mcp_client.search_product(query)
+            if not result or result.strip().casefold() in {
+                self.NO_LOCAL_RESULTS.casefold(),
+                self.NO_CONTEXT.casefold(),
+            }:
+                return self.NO_CONTEXT
+            return result.strip()
+
+        documents = self.retriever.invoke(query)
+        return self._format_documents(documents)
 
     def _invoke_llm(self, template: str, **values) -> str:
         """Run a prompt through the configured LLM."""
@@ -127,6 +150,9 @@ class AgenticRAG:
 
     def _is_relevant(self, question: str, context: str) -> bool:
         """Ask the LLM whether the context can answer the question."""
+        if not self._has_context(context):
+            return False
+
         response = self._invoke_llm(
             "Determine whether the supplied product context contains "
             "information relevant to answering the user's question.\n"
@@ -180,17 +206,14 @@ class AgenticRAG:
         return {"search_query": state["question"].strip()}
 
     def _retrieve(self, state: AgentState) -> dict:
-        """Retrieve product documents."""
+        """Retrieve product context using MCP or the configured retriever."""
         started_at = perf_counter()
         logger.info("RAG node started: retrieval")
 
         try:
-            documents = self.retriever.invoke(state["search_query"])
-            logger.info(
-                "Retrieval returned %d documents",
-                len(documents or []),
-            )
-            return {"context": self._format_documents(documents)}
+            context = self._retrieve_context(state["search_query"])
+            logger.info("Retrieval completed; context available: %s", self._has_context(context))
+            return {"context": context}
         except Exception:
             logger.exception("Product retrieval failed")
             raise
@@ -261,20 +284,18 @@ class AgenticRAG:
                     self.max_retries + 1,
                 )
 
-                documents = self.retriever.invoke(search_query)
-                context = self._format_documents(documents)
+                context = self._retrieve_context(search_query)
 
-                if self._is_relevant(question, context):
+                if not self._has_context(context):
+                    logger.info("No product context returned")
+                elif self._is_relevant(question, context):
                     logger.info("Retrieved context judged relevant")
                     return self._generate_answer(question, context)
-
-                logger.info("Retrieved context judged irrelevant")
+                else:
+                    logger.info("Retrieved context judged irrelevant")
 
                 if attempt < self.max_retries:
-                    search_query = self._rewrite_query(
-                        question,
-                        search_query,
-                    )
+                    search_query = self._rewrite_query(question, search_query)
                     logger.info("Search query rewritten")
                     continue
 
