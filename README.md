@@ -1,29 +1,64 @@
 # E-commerce Product Assistant
 
-An LLM-powered e-commerce product assistant built with Python, FastAPI, LangGraph, and Retrieval-Augmented Generation (RAG).
+An LLM-powered e-commerce product assistant built with Python, FastAPI, LangGraph, LangChain, and Retrieval-Augmented Generation (RAG). It answers product questions using a product catalog and a configurable language model.
 
-The application searches a local product catalog and answers product-related questions using retrieved product information and a configurable language model.
+The application includes an MCP (Model Context Protocol) server for product search, an Agentic RAG workflow, automated tests, linting, and a deployed API.
 
 ## Features
 
-- **Product Catalog:** Load product information from a CSV file.
-- **Product Search API:** Search catalog items by query.
-- **Conversational API:** Ask questions about product prices, ratings, and details.
-- **Agentic RAG Workflow:** Retrieve relevant information, assess relevance, rewrite queries, and generate grounded answers.
-- **LLM Configuration:** Configure language models through project settings and environment variables.
-- **Fallback Responses:** Avoid inventing product information when the retrieved context does not contain the answer.
-- **Automated Tests:** Validate API behavior and configuration.
+- **Product catalog:** Product data is stored in `data/flipkart_products.csv`.
+- **Product search API:** Search products through the `/products` endpoint.
+- **Conversational API:** Ask product questions through `POST /chat`.
+- **Agentic RAG:** Retrieve product context, evaluate relevance, rewrite a search query when needed, and generate an answer grounded in retrieved information.
+- **MCP product search:** Expose local catalog search through the `get_product_info` MCP tool.
+- **Configurable LLM:** Select a supported model provider through project configuration and environment variables.
+- **Fallback behavior:** Return a fallback response when useful product context is unavailable.
+- **Automated quality checks:** Run tests with Pytest and lint the code with Ruff.
+- **Deployment:** The application is deployed on Render.
 
 ## Tech Stack
 
-- Python
+- Python 3.12
 - FastAPI
 - LangChain
 - LangGraph
+- Model Context Protocol (MCP)
+- LangChain MCP Adapters
+- Astra DB / Astra Vector Search (where configured by the project)
 - Pandas
 - Pydantic
 - Pytest
 - Ruff
+- GitHub Actions
+- Render
+
+## Architecture
+
+```text
+Client
+  |
+  v
+FastAPI (/chat)
+  |
+  v
+Agentic RAG workflow
+  |-- classify simple greetings
+  |-- retrieve product context through MCP
+  |-- assess context relevance with the LLM
+  |-- rewrite the search query when needed
+  |-- generate an answer grounded in the context
+  |
+  v
+MCP client
+  |
+  v
+Product Search MCP Server
+  |
+  v
+Product Retriever / Product Catalog
+```
+
+The project also has a `/products` endpoint for product searches. Depending on the configured retriever, catalog retrieval may use the project's configured vector database or local product data. Product prices and availability are only as current as the catalog data; they are not live retailer verification.
 
 ## Project Structure
 
@@ -33,135 +68,179 @@ ecomm-prod-assistant/
 │   └── flipkart_products.csv
 ├── prod_assistant/
 │   ├── api/
+│   │   └── main.py
 │   ├── config/
+│   ├── mcp_servers/
+│   │   ├── client.py
+│   │   └── product_search_server.py
 │   ├── retriever/
+│   │   └── retrieval.py
 │   ├── utils/
+│   │   └── model_loader.py
 │   └── workflow/
+│       └── agentic_rag_workflow.py
 ├── tests/
-├── README.md
-└── pyproject.toml
+├── pyproject.toml
+├── uv.lock
+└── README.md
 ```
 
 ## Prerequisites
 
-- Python version supported by the project dependencies
+- Windows, macOS, or Linux
+- Python `>=3.12,<3.13`
 - Git
-- API credentials for the language model provider you configure
+- `uv`
+- API credentials for the selected LLM provider
+- Any external database credentials required by your chosen configuration
 
 ## Installation
 
 Clone the repository:
 
-```bash
-git clone <YOUR_GITHUB_REPOSITORY_URL>
+```cmd
+git clone https://github.com/vikash1210/ecomm-prod-assistant.git
 cd ecomm-prod-assistant
 ```
 
-Create and activate a virtual environment on Windows:
+Install the project dependencies with `uv`:
 
 ```cmd
-python -m venv .venv
-.venv\Scripts\activate
+uv python install 3.12
+uv sync --python 3.12
 ```
 
-Install the project dependencies using the package manager and instructions defined in `pyproject.toml`.
-
-If the project is configured for `uv`, use:
-
-```cmd
-uv sync
-```
+Run project commands through `uv run` so they use the project's managed environment.
 
 ## Configuration
 
-1. Create or update the local `.env` file using the environment-variable names expected by the application.
-2. Add the API key for your selected language model provider.
-3. Review `prod_assistant/config/config.yaml` to configure the model and retriever settings.
-4. Never commit `.env` files or API secrets to Git.
+1. Create a local `.env` file using the environment variable names expected by the application.
+2. Add the API key for the LLM provider selected in the project configuration.
+3. Review `prod_assistant/config/config.yaml` for model and retrieval settings.
+4. Add any required Astra DB credentials and collection configuration if your selected retriever uses Astra DB.
+5. Never commit `.env` files, API keys, or other secrets.
 
-The application configuration currently defines Google, Groq, and OpenAI model settings. Availability depends on your credentials, installed integrations, and selected provider.
+The repository has configuration for model providers including Google, Groq, and OpenAI. Which provider works depends on the configured model and the credentials available in your environment.
 
-## Product Catalog
+## Run the API Locally
 
-The application reads product information from:
-
-```text
-data/flipkart_products.csv
-```
-
-The CSV contains product fields such as title, price, rating, product URL, and source.
-
-When adding product titles containing commas, enclose the title in double quotes to preserve valid CSV formatting.
-
-## Run the API
-
-Activate the virtual environment and start the development server:
+Start the development server:
 
 ```cmd
-uvicorn prod_assistant.api.main:app --reload
+uv run uvicorn prod_assistant.api.main:app --reload
 ```
 
 Open the interactive API documentation:
 
-http://127.0.0.1:8000/docs
+- http://127.0.0.1:8000/docs
 
 ## API Endpoints
 
-### Search Products
-
-```http
-GET /products?q=iPhone%2015
-```
-
-Returns matching products from the catalog.
-
-To retrieve the catalog without a search query:
+### Search products
 
 ```http
 GET /products
+GET /products?q=iPhone%2015
 ```
 
-### Ask a Product Question
+The endpoint returns products from the configured catalog/retrieval implementation.
 
-Use the `/chat` endpoint in the interactive API documentation to submit a product-related question.
+### Ask a product question
 
-Example question:
+Send a `POST` request to `/chat` with a JSON body:
+
+```json
+{
+  "query": "What is the price of iPhone 15?"
+}
+```
+
+Example using Windows CMD:
+
+```cmd
+curl -X POST http://127.0.0.1:8000/chat -H "Content-Type: application/json" -d "{\"query\":\"What is the price of iPhone 15?\"}"
+```
+
+The response format is:
+
+```json
+{
+  "answer": "..."
+}
+```
+
+The exact answer depends on the product catalog and configured LLM. For example, the project was tested with catalog data returning an iPhone 15 price of `INR 67999.00`; this is sample catalog data, not a guarantee of the current retail price.
+
+## MCP Product Search
+
+The MCP server is located at:
 
 ```text
-What is the price of Apple iPhone 15?
+prod_assistant/mcp_servers/product_search_server.py
 ```
 
-The response depends on the information available in the product catalog and the configured language model.
+It exposes the `get_product_info` tool, which searches the product catalog.
 
-## Run Tests
-
-Run the automated test suite:
+To run the MCP server directly from the repository root:
 
 ```cmd
-pytest -q
+uv run python -m prod_assistant.mcp_servers.product_search_server
 ```
 
-Run code quality checks:
+The server uses the `stdio` transport, so it is intended to be launched by an MCP-compatible client rather than opened as a standalone HTTP endpoint.
+
+A reusable client is provided in:
+
+```text
+prod_assistant/mcp_servers/client.py
+```
+
+Quick local MCP-client check:
 
 ```cmd
-ruff check .
+uv run python -c "from prod_assistant.mcp_servers.client import MCPProductSearchClient; print(MCPProductSearchClient().search_product('iPhone 15'))"
 ```
 
-## Current Validation
+## Run Tests and Lint
 
-The project has passed the following local checks:
+Run the full test suite:
 
-- 50 automated tests passed.
-- Ruff code quality checks passed.
+```cmd
+uv run python -m pytest -q
+```
 
-These results reflect the local development environment and may change as the project evolves.
+Run Ruff:
 
-## Security
+```cmd
+uv run ruff check prod_assistant tests
+```
 
-- Keep API keys in environment variables or a local `.env` file.
+The project has most recently passed **50 tests** and the Ruff check in the development environment. Run these commands again after making changes to confirm the current state.
+
+## CI and Deployment
+
+- **Source control:** GitHub repository `vikash1210/ecomm-prod-assistant`, branch `master`.
+- **CI:** GitHub Actions runs project quality checks, including Ruff and tests.
+- **Hosting:** Render web service.
+- **Production URL:** https://ecomm-prod-assistant.onrender.com
+
+Test the deployed API with:
+
+```cmd
+curl -X POST https://ecomm-prod-assistant.onrender.com/chat -H "Content-Type: application/json" -d "{\"query\":\"What is the price of iPhone 15?\"}"
+```
+
+Render's free instance may spin down when inactive, which can make the first request take longer. A successful deployment does not replace checking the application logs and testing the production endpoints.
+
+## Security and Limitations
+
+- Keep API credentials in environment variables or a local `.env` file.
 - Do not commit secrets or credentials.
-- Use a production-ready server configuration before deploying publicly.
+- Treat catalog values as dataset values, not verified real-time retailer prices or inventory.
+- Configure production logging, error handling, resource limits, and secret management appropriately before expanding usage.
+- Review database access permissions and network settings for your deployment.
+- Add a license file and update this section before distributing the project under an open-source license.
 
 ## License
 
-Add your chosen open-source license before distributing this project.
+No license is specified here yet. Add a `LICENSE` file if you intend to distribute the project under a particular license.
