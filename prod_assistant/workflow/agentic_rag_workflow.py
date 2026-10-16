@@ -13,7 +13,6 @@ from prod_assistant.mcp_servers.client import MCPProductSearchClient
 from prod_assistant.retriever.retrieval import Retriever
 from prod_assistant.utils.model_loader import ModelLoader
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
