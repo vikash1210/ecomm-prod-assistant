@@ -6,8 +6,11 @@ import yaml
 
 def load_config() -> dict:
     """Load the application configuration from config.yaml."""
+
     config_path = (
-        Path(__file__).resolve().parents[1] / "config" / "config.yaml"
+        Path(__file__).resolve().parents[1]
+        / "config"
+        / "config.yaml"
     )
 
     if not config_path.is_file():
@@ -18,11 +21,12 @@ def load_config() -> dict:
     with config_path.open("r", encoding="utf-8") as config_file:
         config = yaml.safe_load(config_file)
 
-    
     if not isinstance(config, dict):
         raise TypeError(
-            f"Invalid configuration format in {config_path}"
+            f"Invalid configuration format in {config_path}: "
+            "expected a YAML mapping."
         )
 
     return config
+
 
