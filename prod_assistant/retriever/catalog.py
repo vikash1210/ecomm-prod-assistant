@@ -4,6 +4,7 @@
 import hashlib
 import re
 from pathlib import Path
+from typing import ClassVar
 
 import pandas as pd
 
@@ -17,7 +18,7 @@ from prod_assistant.retriever.product_schema import (
 class ProductCatalog:
     """Store products and provide basic search functionality."""
 
-    PHONE_QUERY_TERMS = {
+    PHONE_QUERY_TERMS: ClassVar[set[str]] = {
         "phone",
         "phones",
         "mobile",
@@ -26,7 +27,7 @@ class ProductCatalog:
         "smartphones",
     }
 
-    PHONE_BRAND_TERMS = {
+    PHONE_BRAND_TERMS: ClassVar[set[str]] = {
         "iphone",
         "pixel",
         "samsung",
@@ -38,7 +39,7 @@ class ProductCatalog:
         "oppo",
     }
 
-    ACCESSORY_TERMS = {
+    ACCESSORY_TERMS: ClassVar[set[str]] = {
         "charger",
         "chargers",
         "case",
@@ -58,7 +59,7 @@ class ProductCatalog:
         "bank",
     }
 
-    STOP_WORDS = {
+    STOP_WORDS: ClassVar[set[str]] = {
         "a", "an", "and", "are", "best", "can", "do", "find",
         "for", "give", "good", "i", "in", "is", "me", "of",
         "on", "please", "recommend", "show", "suggest", "the",
@@ -90,7 +91,10 @@ class ProductCatalog:
 
         df = normalize_dataframe(pd.read_csv(path))
 
-        if "product_title" not in df.columns or "price" not in df.columns:
+        if (
+            "product_title" not in df.columns
+            or "price" not in df.columns
+        ):
             raise ValueError(
                 "Product CSV must include a product title and price. "
                 "Accepted title aliases include title, product_name and name; "
@@ -200,7 +204,6 @@ class ProductCatalog:
         if words.intersection(self.ACCESSORY_TERMS):
             return False
 
-        # Recognize common phone brands and product naming conventions.
         return bool(
             words.intersection(self.PHONE_BRAND_TERMS)
         ) or bool(
@@ -223,7 +226,6 @@ class ProductCatalog:
 
         query_tokens = self._tokenize(normalized_query)
 
-        # Support queries such as "under ₹20,000" and "below 70000".
         budget_match = re.search(
             r"\b(?:under|below|less than|up to|upto|within|"
             r"cheaper than)\s*₹?\s*([\d,]+)",
@@ -246,7 +248,6 @@ class ProductCatalog:
             if word not in self.STOP_WORDS and not word.isdigit()
         }
 
-        # A generic phone query should match common phone brands.
         if phone_intent:
             query_words.update(self.PHONE_BRAND_TERMS)
 
@@ -260,7 +261,6 @@ class ProductCatalog:
             ):
                 continue
 
-            # Only compare INR products with an INR-style numeric budget.
             if max_price is not None:
                 if (product.currency or "").upper() != "INR":
                     continue
@@ -268,7 +268,6 @@ class ProductCatalog:
                 if product.price >= max_price:
                     continue
 
-            # A generic phone query must not return accessories.
             if phone_intent and not self._is_phone_product(product):
                 continue
 

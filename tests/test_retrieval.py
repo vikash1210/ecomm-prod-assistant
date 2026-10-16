@@ -1,5 +1,7 @@
 
 """Unit tests for local and AstraDB-backed product retrieval."""
+
+import pandas as pd
 import pytest
 from langchain_core.documents import Document
 
@@ -51,7 +53,7 @@ def make_catalog() -> ProductCatalog:
 
 @pytest.fixture
 def clear_astra_environment(monkeypatch):
-    """Ensure retrieval tests do not use real AstraDB credentials."""
+    """Ensure tests do not depend on real AstraDB credentials."""
     for name in Retriever.REQUIRED_ASTRA_VARS:
         monkeypatch.delenv(name, raising=False)
 
@@ -145,7 +147,10 @@ def test_invoke_uses_configured_remote_retriever(
             assert query == "remote phone"
             return expected_documents
 
-    retriever = Retriever(catalog=make_catalog())
+    retriever = Retriever(
+        catalog=make_catalog(),
+        use_remote=True,
+    )
     monkeypatch.setattr(
         retriever,
         "load_retriever",
@@ -174,7 +179,10 @@ def test_remote_retrieval_respects_limit(
         def invoke(self, query):
             return documents
 
-    retriever = Retriever(catalog=make_catalog())
+    retriever = Retriever(
+        catalog=make_catalog(),
+        use_remote=True,
+    )
     monkeypatch.setattr(
         retriever,
         "load_retriever",
@@ -194,12 +202,8 @@ def test_load_retriever_reports_missing_configuration(
     with pytest.raises(RuntimeError, match="AstraDB retrieval requires"):
         retriever.load_retriever()
 
+
 def test_local_retrieval_preserves_extra_csv_attributes(tmp_path):
-    import pandas as pd
-
-    from prod_assistant.retriever.catalog import ProductCatalog
-    from prod_assistant.retriever.retrieval import Retriever
-
     csv_path = tmp_path / "products.csv"
     pd.DataFrame(
         [

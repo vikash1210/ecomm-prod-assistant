@@ -27,6 +27,8 @@ class Retriever:
     def __init__(
         self,
         catalog: ProductCatalog | None = None,
+        *,
+        use_remote: bool | None = None,
     ) -> None:
         load_dotenv()
 
@@ -38,7 +40,15 @@ class Retriever:
         self.config = load_config()
         self.model_loader = ModelLoader()
 
-        # Cache the vector store and retriever for reuse.
+        # An explicitly supplied catalog defaults to local retrieval.
+        # Without a supplied catalog, use AstraDB when configured.
+        if use_remote is None:
+            self.use_remote = (
+                catalog is None and self._has_remote_configuration()
+            )
+        else:
+            self.use_remote = use_remote
+
         self.store: AstraDBVectorStore | None = None
         self.retriever_instance = None
 
@@ -120,7 +130,7 @@ class Retriever:
 
     @staticmethod
     def _is_highest_rated_query(query: str) -> bool:
-        """Recognize queries asking for the highest-rated in-stock product."""
+        """Recognize highest-rated in-stock product queries."""
 
         normalized_query = query.casefold()
         rating_terms = (
@@ -170,6 +180,11 @@ class Retriever:
     def load_retriever(self):
         """Create and cache the AstraDB similarity retriever."""
 
+        if not self.use_remote:
+            raise RuntimeError(
+                "AstraDB retrieval requires use_remote=True."
+            )
+
         if not self._has_remote_configuration():
             raise RuntimeError(
                 "AstraDB retrieval requires these environment variables: "
@@ -202,7 +217,6 @@ class Retriever:
 
         return self.retriever_instance
 
-    
     def invoke(
         self,
         query: str,
@@ -216,14 +230,11 @@ class Retriever:
 
         normalized_query = query.casefold()
 
-        # Catalog-wide ranking must not depend on vector similarity.
         if self._is_highest_rated_query(query):
             return self._get_highest_rated_documents()[:limit]
 
-        # Retrieve candidate documents using the existing backend.
-        if self._has_remote_configuration():
-            retriever = self.load_retriever()
-            documents = retriever.invoke(query)
+        if self.use_remote:
+            documents = self.load_retriever().invoke(query)
         else:
             products = self.catalog.search_products(query=query)
             documents = [
@@ -231,7 +242,6 @@ class Retriever:
                 for product in products
             ]
 
-        # Detect an explicit price budget, e.g. "under 70000".
         budget_match = re.search(
             r"\b(?:under|below|less than|up to|upto|within|"
             r"cheaper than)\s*₹?\s*([\d,]+)",
@@ -244,28 +254,41 @@ class Retriever:
         )
 
         phone_terms = {
-            "phone", "phones", "mobile", "mobiles",
-            "smartphone", "smartphones", "iphone",
+            "phone",
+            "phones",
+            "mobile",
+            "mobiles",
+            "smartphone",
+            "smartphones",
+            "iphone",
         }
         query_words = set(re.findall(r"[^\W_]+", normalized_query))
         phone_intent = bool(query_words & phone_terms)
 
         accessory_terms = {
-            "charger", "case", "cover", "airpods", "earphones",
-            "earbuds", "headphones", "battery", "cable",
-            "adapter", "protector", "powerbank",
+            "charger",
+            "case",
+            "cover",
+            "airpods",
+            "earphones",
+            "earbuds",
+            "headphones",
+            "battery",
+            "cable",
+            "adapter",
+            "protector",
+            "powerbank",
         }
 
         filtered_documents = []
 
         for document in documents:
             metadata = document.metadata
+            raw_title = metadata.get("product_title")
             title = str(
-                metadata.get("product_title")
-                or document.page_content
+                raw_title if raw_title else document.page_content
             ).casefold()
 
-            # Apply an explicit budget only to INR-priced products.
             if max_price is not None:
                 currency = str(metadata.get("currency", "")).upper()
                 price = metadata.get("price")
@@ -279,16 +302,23 @@ class Retriever:
                 except (TypeError, ValueError):
                     continue
 
-            # For phone requests, exclude common accessories and
-            # require a recognizable phone product name.
-            if phone_intent:
+            if phone_intent and raw_title:
                 if any(term in title for term in accessory_terms):
                     continue
 
                 phone_name_terms = (
-                    "iphone", "pixel", "samsung", "oneplus",
-                    "redmi", "realme", "motorola", "vivo",
-                    "oppo", "phone", "smartphone", "mobile",
+                    "iphone",
+                    "pixel",
+                    "samsung",
+                    "oneplus",
+                    "redmi",
+                    "realme",
+                    "motorola",
+                    "vivo",
+                    "oppo",
+                    "phone",
+                    "smartphone",
+                    "mobile",
                 )
                 if not any(term in title for term in phone_name_terms):
                     continue
@@ -296,7 +326,6 @@ class Retriever:
             filtered_documents.append(document)
 
         return filtered_documents[:limit]
-
 
     def call_retriever(self, query: str) -> list[Document]:
         """Compatibility method for the existing RAG workflow."""
@@ -314,7 +343,7 @@ class Retriever:
         documents = self.invoke(query, limit=limit)
 
         if not documents:
-            return "No results found."
+            return "No local results found."
 
         return "\n\n---\n\n".join(
             document.page_content

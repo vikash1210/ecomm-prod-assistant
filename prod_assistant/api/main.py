@@ -14,7 +14,6 @@ from prod_assistant.retriever.catalog import ProductCatalog
 from prod_assistant.utils.logger import get_logger
 from prod_assistant.workflow.agentic_rag_workflow import AgenticRAG
 
-
 logger = get_logger(__name__)
 
 # Resolve the project root directory.

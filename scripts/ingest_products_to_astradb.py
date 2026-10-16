@@ -7,11 +7,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain_astradb import AstraDBVectorStore
 
-from prod_assistant.utils.config_loader import load_config
 from prod_assistant.retriever.catalog import ProductCatalog
 from prod_assistant.retriever.retrieval import Retriever
+from prod_assistant.utils.config_loader import load_config
 from prod_assistant.utils.model_loader import ModelLoader
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CSV_PATH = PROJECT_ROOT / "data" / "flipkart_products.csv"
@@ -29,7 +28,8 @@ def main() -> None:
     load_dotenv(PROJECT_ROOT / ".env")
 
     missing = [
-        name for name in REQUIRED_ENV_VARS
+        name
+        for name in REQUIRED_ENV_VARS
         if not os.getenv(name)
     ]
     if missing:
