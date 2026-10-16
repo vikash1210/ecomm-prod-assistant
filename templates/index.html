@@ -706,6 +706,60 @@
             color: #9d2828;
         }
 
+        /* Markdown formatting inside assistant messages */
+        .message .markdown-heading {
+            margin: 0.35em 0 0.25em;
+            line-height: 1.35;
+            font-weight: 750;
+        }
+
+        .message h1.markdown-heading { font-size: 1.35em; }
+        .message h2.markdown-heading { font-size: 1.25em; }
+        .message h3.markdown-heading { font-size: 1.15em; }
+        .message h4.markdown-heading,
+        .message h5.markdown-heading,
+        .message h6.markdown-heading { font-size: 1.05em; }
+
+        .message p.markdown-paragraph {
+            margin: 0 0 0.55em;
+        }
+
+        .message p.markdown-paragraph:last-child {
+            margin-bottom: 0;
+        }
+
+        .message ul,
+        .message ol {
+            margin: 0.25em 0 0.65em;
+            padding-left: 1.5em;
+        }
+
+        .message li {
+            margin: 0.15em 0;
+        }
+
+        .message pre {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            background: #e3ebdf;
+            border-radius: 8px;
+            padding: 9px;
+            margin: 0.35em 0 0.65em;
+            font-family: Consolas, "Courier New", monospace;
+        }
+
+        .message code {
+            font-family: Consolas, "Courier New", monospace;
+            background: #e3ebdf;
+            border-radius: 4px;
+            padding: 0.05em 0.25em;
+        }
+
+        .message pre code {
+            background: transparent;
+            padding: 0;
+        }
+
         .chat-suggestions {
             display: flex;
             flex-wrap: wrap;
@@ -1381,45 +1435,165 @@
         }
 
         
-function addMessage(text, type = "bot") {
-    const message = document.createElement("div");
-    message.className = "message " + type;
+function appendInlineMarkdown(parent, text) {
+            // Parse only a small, safe Markdown subset. All ordinary content is
+            // inserted with text nodes; response text is never assigned to innerHTML.
+            const pattern = /(\*\*[^*]+\*\*|__[^_]+__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)|`[^`\n]+`)/g;
+            let lastIndex = 0;
+            let match;
 
-    // Keep messages safe: render text, not raw HTML.
-    const lines = String(text).split("\n");
+            while ((match = pattern.exec(text)) !== null) {
+                if (match.index > lastIndex) {
+                    parent.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
 
-    lines.forEach((line, index) => {
-        if (index > 0) {
-            message.appendChild(document.createElement("br"));
+                const token = match[0];
+                let element;
+                let content;
+
+                if (token.startsWith("**") && token.endsWith("**")) {
+                    element = document.createElement("strong");
+                    content = token.slice(2, -2);
+                } else if (token.startsWith("__") && token.endsWith("__")) {
+                    element = document.createElement("strong");
+                    content = token.slice(2, -2);
+                } else if (token.startsWith("`") && token.endsWith("`")) {
+                    element = document.createElement("code");
+                    content = token.slice(1, -1);
+                } else {
+                    element = document.createElement("em");
+                    content = token.slice(1, -1);
+                }
+
+                element.textContent = content;
+                parent.appendChild(element);
+                lastIndex = pattern.lastIndex;
+            }
+
+            if (lastIndex < text.length) {
+                parent.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
         }
 
-        // Render **bold** and *italic* while keeping text safe.
-        const parts = line.split(/(\*\*.*?\*\*|\*[^*]+?\*)/g);
+        function renderMarkdownInto(message, text) {
+            // Keep user messages as plain text; format assistant responses.
+            message.replaceChildren();
 
-        parts.forEach((part) => {
-            if (part.startsWith("**") && part.endsWith("**")) {
-                const bold = document.createElement("strong");
-                bold.textContent = part.slice(2, -2);
-                message.appendChild(bold);
-            } else if (
-                part.startsWith("*") &&
-                part.endsWith("*") &&
-                part.length > 2
-            ) {
-                const italic = document.createElement("em");
-                italic.textContent = part.slice(1, -1);
-                message.appendChild(italic);
-            } else {
-                message.appendChild(document.createTextNode(part));
+            if (message.classList.contains("user") || message.classList.contains("error")) {
+                message.textContent = String(text);
+                return;
             }
-        });
-    });
 
-    chatMessages.appendChild(message);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+            const sourceLines = String(text).replace(/\r\n?/g, "\n").split("\n");
+            let paragraphLines = [];
+            let activeList = null;
+            let activeListType = null;
+            let codeLines = [];
+            let inCodeBlock = false;
 
-    return message;
-}
+            function flushParagraph() {
+                if (!paragraphLines.length) return;
+                const paragraph = document.createElement("p");
+                paragraph.className = "markdown-paragraph";
+                paragraphLines.forEach((line, index) => {
+                    if (index > 0) paragraph.appendChild(document.createElement("br"));
+                    appendInlineMarkdown(paragraph, line);
+                });
+                message.appendChild(paragraph);
+                paragraphLines = [];
+            }
+
+            function closeList() {
+                activeList = null;
+                activeListType = null;
+            }
+
+            function flushCode() {
+                const pre = document.createElement("pre");
+                const code = document.createElement("code");
+                code.textContent = codeLines.join("\n");
+                pre.appendChild(code);
+                message.appendChild(pre);
+                codeLines = [];
+            }
+
+            for (const rawLine of sourceLines) {
+                const line = rawLine.trimEnd();
+
+                if (/^\s*```/.test(line)) {
+                    flushParagraph();
+                    closeList();
+                    if (inCodeBlock) {
+                        flushCode();
+                        inCodeBlock = false;
+                    } else {
+                        inCodeBlock = true;
+                        codeLines = [];
+                    }
+                    continue;
+                }
+
+                if (inCodeBlock) {
+                    codeLines.push(rawLine);
+                    continue;
+                }
+
+                if (!line.trim()) {
+                    flushParagraph();
+                    closeList();
+                    continue;
+                }
+
+                const headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+                if (headingMatch) {
+                    flushParagraph();
+                    closeList();
+                    const level = headingMatch[1].length;
+                    const heading = document.createElement("h" + level);
+                    heading.className = "markdown-heading";
+                    appendInlineMarkdown(heading, headingMatch[2]);
+                    message.appendChild(heading);
+                    continue;
+                }
+
+                const unorderedMatch = line.match(/^\s*[-*+]\s+(.+)$/);
+                const orderedMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
+                const listMatch = unorderedMatch || orderedMatch;
+
+                if (listMatch) {
+                    flushParagraph();
+                    const listType = unorderedMatch ? "ul" : "ol";
+                    if (!activeList || activeListType !== listType) {
+                        closeList();
+                        activeList = document.createElement(listType);
+                        activeListType = listType;
+                        message.appendChild(activeList);
+                    }
+
+                    const item = document.createElement("li");
+                    appendInlineMarkdown(item, listMatch[1]);
+                    activeList.appendChild(item);
+                    continue;
+                }
+
+                closeList();
+                paragraphLines.push(line);
+            }
+
+            if (inCodeBlock) flushCode();
+            flushParagraph();
+        }
+
+        function addMessage(text, type = "bot") {
+            const message = document.createElement("div");
+            message.className = "message " + type;
+            renderMarkdownInto(message, text);
+
+            chatMessages.appendChild(message);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            return message;
+        }
 
 
         function useSuggestion(text) {
@@ -1471,7 +1645,7 @@ function addMessage(text, type = "bot") {
                     throw new Error("The server returned an unexpected response.");
                 }
 
-                thinkingMessage.textContent = String(answer);
+                renderMarkdownInto(thinkingMessage, String(answer));
 
             } catch (error) {
                 console.error("Chat request failed:", error);
