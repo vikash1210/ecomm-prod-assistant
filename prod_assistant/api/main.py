@@ -1,6 +1,9 @@
 
 """FastAPI application entry point."""
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -23,12 +26,6 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 # Configure the HTML templates directory.
 templates = Jinja2Templates(
     directory=str(BASE_DIR / "templates")
-)
-
-app = FastAPI(
-    title=settings.app_name,
-    version="0.1.0",
-    description="An LLM-powered e-commerce product assistant.",
 )
 
 # Load the product catalog from the project root.
@@ -59,6 +56,41 @@ def get_agent() -> AgenticRAG:
     """Create the RAG agent once and reuse it."""
 
     return AgenticRAG()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Initialize MCP before serving requests and close it at shutdown."""
+    agent = get_agent()
+    mcp_client = agent.mcp_client
+
+    try:
+        if mcp_client is not None:
+            logger.info(
+                "Initializing MCP client during application startup"
+            )
+
+            await asyncio.to_thread(mcp_client.initialize)
+
+            logger.info("MCP client initialized successfully")
+
+        yield
+
+    finally:
+        if mcp_client is not None:
+            logger.info("Closing MCP client during application shutdown")
+
+            await asyncio.to_thread(mcp_client.close)
+
+            logger.info("MCP client closed")
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version="0.1.0",
+    description="An LLM-powered e-commerce product assistant.",
+    lifespan=lifespan,
+)
 
 
 @app.get("/", response_class=HTMLResponse)
