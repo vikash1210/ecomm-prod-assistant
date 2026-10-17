@@ -52,8 +52,7 @@ class AgenticRAG:
         if max_retries < 0:
             raise ValueError("max_retries cannot be negative")
 
-        # An injected retriever is retained for tests and custom integrations.
-        # Normal application execution uses the MCP product-search tool.
+        # Production uses MCP. An injected retriever is useful for tests.
         self.retriever = retriever if retriever is not None else Retriever()
         self.mcp_client = (
             MCPProductSearchClient() if retriever is None else None
@@ -122,6 +121,7 @@ class AgenticRAG:
     def _has_context(context: str) -> bool:
         """Check whether retrieval returned actual source material."""
         normalized = context.strip().casefold()
+
         return bool(normalized) and normalized not in {
             AgenticRAG.NO_CONTEXT.casefold(),
             AgenticRAG.NO_LOCAL_RESULTS.casefold(),
@@ -131,11 +131,13 @@ class AgenticRAG:
         """Retrieve product context through MCP or an injected retriever."""
         if self.mcp_client is not None:
             result = self.mcp_client.search_product(query)
+
             if not result or result.strip().casefold() in {
                 self.NO_LOCAL_RESULTS.casefold(),
                 self.NO_CONTEXT.casefold(),
             }:
                 return self.NO_CONTEXT
+
             return result.strip()
 
         documents = self.retriever.invoke(query)
@@ -148,7 +150,7 @@ class AgenticRAG:
         return chain.invoke(values).strip()
 
     def _is_relevant(self, question: str, context: str) -> bool:
-        """Ask the LLM whether the context can answer the question."""
+        """Check whether the retrieved context can answer the question."""
         if not self._has_context(context):
             return False
 
@@ -162,10 +164,11 @@ class AgenticRAG:
             question=question,
             context=context,
         )
+
         return response.strip().upper().startswith("YES")
 
     def _rewrite_query(self, question: str, previous_query: str) -> str:
-        """Generate a more effective product search query."""
+        """Rewrite the product search query."""
         rewritten = self._invoke_llm(
             "Rewrite the user's product question as a concise search "
             "query that will help retrieve relevant product information.\n"
@@ -176,10 +179,11 @@ class AgenticRAG:
             question=question,
             previous_query=previous_query,
         )
+
         return rewritten or previous_query
 
     def _generate_answer(self, question: str, context: str) -> str:
-        """Generate a grounded answer from product context."""
+        """Generate an answer grounded in retrieved product context."""
         if not self._has_context(context):
             return self.FALLBACK_ANSWER
 
@@ -197,6 +201,7 @@ class AgenticRAG:
             question=question,
             context=context,
         )
+
         return answer or self.FALLBACK_ANSWER
 
     def _assistant(self, state: AgentState) -> dict:
@@ -205,17 +210,24 @@ class AgenticRAG:
         return {"search_query": state["question"].strip()}
 
     def _retrieve(self, state: AgentState) -> dict:
-        """Retrieve product context using MCP or the configured retriever."""
+        """Retrieve product context for graph-based execution."""
         started_at = perf_counter()
         logger.info("RAG node started: retrieval")
 
         try:
             context = self._retrieve_context(state["search_query"])
-            logger.info("Retrieval completed; context available: %s", self._has_context(context))
+
+            logger.info(
+                "Retrieval completed; context available: %s",
+                self._has_context(context),
+            )
+
             return {"context": context}
+
         except Exception:
             logger.exception("Product retrieval failed")
             raise
+
         finally:
             logger.info(
                 "Retrieval duration: %.2f seconds",
@@ -223,7 +235,7 @@ class AgenticRAG:
             )
 
     def _generate(self, state: AgentState) -> dict:
-        """Generate a grounded answer for graph-based execution."""
+        """Generate an answer for graph-based execution."""
         started_at = perf_counter()
         logger.info("RAG node started: generation")
 
@@ -233,9 +245,11 @@ class AgenticRAG:
                 state["context"],
             )
             return {"answer": answer}
+
         except Exception:
             logger.exception("LLM answer generation failed")
             raise
+
         finally:
             logger.info(
                 "Generation duration: %.2f seconds",
@@ -243,19 +257,22 @@ class AgenticRAG:
             )
 
     def _build_workflow(self):
-        """Build the basic retrieval and generation graph."""
+        """Build the retrieval and generation graph."""
         workflow = StateGraph(AgentState)
+
         workflow.add_node("assistant", self._assistant)
         workflow.add_node("retriever", self._retrieve)
         workflow.add_node("generator", self._generate)
+
         workflow.add_edge(START, "assistant")
         workflow.add_edge("assistant", "retriever")
         workflow.add_edge("retriever", "generator")
         workflow.add_edge("generator", END)
+
         return workflow
 
     def run(self, query: str) -> str:
-        """Run retrieval, relevance checks, query rewrites, and generation."""
+        """Run the product RAG workflow."""
         if not query or not query.strip():
             raise ValueError("query cannot be empty")
 
@@ -263,6 +280,7 @@ class AgenticRAG:
 
         if self._is_greeting(question):
             logger.info("Greeting detected; skipping RAG workflow")
+
             return (
                 "Hi! I'm your ShopSmart product assistant. "
                 "I can help you find products, compare prices, "
@@ -271,11 +289,30 @@ class AgenticRAG:
             )
 
         started_at = perf_counter()
-        search_query = question
-        context = self.NO_CONTEXT
         logger.info("Product question received")
 
         try:
+            # Production MCP path: one retrieval attempt avoids repeated
+            # MCP startup, query rewriting, and relevance-check LLM calls.
+            if self.mcp_client is not None:
+                logger.info("Production MCP path: single retrieval attempt")
+
+                context = self._retrieve_context(question)
+
+                if not self._has_context(context):
+                    logger.info(
+                        "No product context returned; skipping extra "
+                        "LLM calls"
+                    )
+                    return self.FALLBACK_ANSWER
+
+                return self._generate_answer(question, context)
+
+            # Injected retrievers retain retry behavior for tests and
+            # custom integrations.
+            search_query = question
+            context = self.NO_CONTEXT
+
             for attempt in range(self.max_retries + 1):
                 logger.info(
                     "Retrieval attempt %d of %d",
@@ -294,7 +331,10 @@ class AgenticRAG:
                     logger.info("Retrieved context judged irrelevant")
 
                 if attempt < self.max_retries:
-                    search_query = self._rewrite_query(question, search_query)
+                    search_query = self._rewrite_query(
+                        question,
+                        search_query,
+                    )
                     logger.info("Search query rewritten")
                     continue
 
@@ -306,6 +346,7 @@ class AgenticRAG:
         except Exception:
             logger.exception("Agentic RAG request failed")
             raise
+
         finally:
             logger.info(
                 "Total RAG duration: %.2f seconds",
@@ -315,5 +356,6 @@ class AgenticRAG:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
     agent = AgenticRAG()
     print(agent.run("What is the price of iPhone 15?"))
